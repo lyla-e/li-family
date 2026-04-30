@@ -138,14 +138,24 @@ button {
     <div id="eventText">Click "Generate Story"</div>
     <button onclick="nextEvent()">→</button>
 </div>
+<div id="choiceRow" style="display:none; gap:12px; margin-top: 16px;">
+    <button id="choiceA" style="width:auto; padding:10px 18px;" onclick="pickChoice(0)">Choice A</button>
+    <button id="choiceB" style="width:auto; padding:10px 18px;" onclick="pickChoice(1)">Choice B</button>
+</div>
 
 <script>
 let events = [];
 let currentIndex = 0;
+let activePlayers = [];
+let immortalPlayers = [];
+let gameOver = false;
+let pendingChoices = [];
 
 function runGame() {
     events = [];
     currentIndex = 0;
+    gameOver = false;
+    pendingChoices = [];
 
     let friends = document.getElementById("friendsInput").value
         .split(",")
@@ -157,66 +167,69 @@ function runGame() {
          .map(x => x.trim())
          .filter(x => x !== "");
 
-    let weirdactions = ['screams "Little Girl!" at', 'kills', 'screams "Little Boy" at', 'accidentally deletes', 'sponsors', 'scolds this person for having a low credit score: ', 'chases', 'says "I am not a minor anymore!" to'];
-    let actions = ['loves', 'hates', 'hugs', 'eats', 'misses', 'cooks', 'marries', 'kisses', 'kills', 
-                   'interlocks toes with', 'inflates', 'defenestrates', 'cornobbles',
-                   'drowns', 'touches', 'jumps', 'blows up', 'vaporizes', 'yeets', 'steal the left shoe of', 'steals the right shoe of', 'takes feet pics of', 'gives an apple to', 'sings Baby Shark at', 'scolds this person for having a low credit score: ', 'robs'];
-
-    let deaths = 0;
-
     events.push("The players in this game are: " + friends.join(", "));
     events.push("Influencers (immortal): " + weirdpeople.join(", "));
-
-    while (friends.length > 1) {
-        let roll = Math.floor(Math.random() * 4);
-
-        let friend, action;
-
-        if (roll >= 3) {
-            friend = weirdpeople[Math.floor(Math.random() * weirdpeople.length)];
-            action = weirdactions[Math.floor(Math.random() * weirdactions.length)];
-        } else {
-            friend = friends[Math.floor(Math.random() * friends.length)];
-            action = actions[Math.floor(Math.random() * actions.length)];
-        }
-
-        let friend2 = friends[Math.floor(Math.random() * friends.length)];
-
-        // prevent self-targeting
-        while (friend2 === friend && friends.length > 1) {
-            friend2 = friends[Math.floor(Math.random() * friends.length)];
-        }
-
-        events.push(friend + " " + action + " " + friend2);
-
-        if (action === 'screams "Little Boy" at') {
-            events.push(friend2 + " screams back 'What? I'm a girl?'");
-        }
-
-        if (['kills','eats','drowns','blows up','inflates','defenestrates', 'blows up', 'vaporizes', 'accidentally deletes'].includes(action)) {
-            friends.splice(friends.indexOf(friend2), 1);
-            events.push(friend2 + " is now dead.");
-
-            deaths++;
-
-            if (deaths === 1) {
-                events.push("This is the first death!");
-            }
-
-            if (friends.length === 2) {
-                events.push("Final showdown between " + friends[0] + " and " + friends[1] + "!");
-            }
-        }
-    }
-
-    if (friends.length === 1) {
-        events.push(friends[0] + " is the winner!");
-    }
+    events.push("Choose your path below to decide what happens next.");
+    activePlayers = [...friends];
+    immortalPlayers = [...weirdpeople];
 
     showEvent();
-    setTimeout(() => {
-        showAllEvents();
-    }, 500 + (events.length * 300));
+    prepareChoices();
+}
+
+function randomFrom(list) {
+    return list[Math.floor(Math.random() * list.length)];
+}
+
+function createOption() {
+    const weirdactions = ['screams "Little Girl!" at', 'kills', 'screams "Little Boy" at', 'accidentally deletes', 'sponsors', 'scolds this person for having a low credit score: ', 'chases', 'says "I am not a minor anymore!" to'];
+    const actions = ['loves', 'hates', 'hugs', 'eats', 'misses', 'cooks', 'marries', 'kisses', 'kills',
+                   'interlocks toes with', 'inflates', 'defenestrates', 'cornobbles',
+                   'drowns', 'touches', 'jumps', 'blows up', 'vaporizes', 'yeets', 'steal the left shoe of', 'steals the right shoe of', 'takes feet pics of', 'gives an apple to', 'sings Baby Shark at', 'scolds this person for having a low credit score: ', 'robs'];
+    const lethal = ['kills','eats','drowns','blows up','inflates','defenestrates','vaporizes','accidentally deletes'];
+
+    const roll = Math.floor(Math.random() * 4);
+    const source = roll >= 3 ? randomFrom(immortalPlayers) : randomFrom(activePlayers);
+    const action = roll >= 3 ? randomFrom(weirdactions) : randomFrom(actions);
+    let target = randomFrom(activePlayers);
+    while (target === source && activePlayers.length > 1) {
+        target = randomFrom(activePlayers);
+    }
+    return { source, action, target, lethal: lethal.includes(action) };
+}
+
+function prepareChoices() {
+    if (activePlayers.length <= 1) {
+        gameOver = true;
+        if (activePlayers.length === 1) events.push(activePlayers[0] + " is the winner!");
+        currentIndex = events.length - 1;
+        showEvent();
+        document.getElementById("choiceRow").style.display = "none";
+        return;
+    }
+    pendingChoices = [createOption(), createOption()];
+    document.getElementById("choiceA").innerText = pendingChoices[0].source + " " + pendingChoices[0].action + " " + pendingChoices[0].target;
+    document.getElementById("choiceB").innerText = pendingChoices[1].source + " " + pendingChoices[1].action + " " + pendingChoices[1].target;
+    document.getElementById("choiceRow").style.display = "flex";
+}
+
+function pickChoice(choiceIndex) {
+    if (gameOver) return;
+    const pick = pendingChoices[choiceIndex];
+    events.push(pick.source + " " + pick.action + " " + pick.target);
+    if (pick.action === 'screams "Little Boy" at') {
+        events.push(pick.target + " screams back 'What? I'm a girl?'");
+    }
+    if (pick.lethal && activePlayers.includes(pick.target)) {
+        activePlayers.splice(activePlayers.indexOf(pick.target), 1);
+        events.push(pick.target + " is now dead.");
+        if (activePlayers.length === 2) {
+            events.push("Final showdown between " + activePlayers[0] + " and " + activePlayers[1] + "!");
+        }
+    }
+    currentIndex = events.length - 1;
+    showEvent();
+    prepareChoices();
 }
 
 function showEvent() {
