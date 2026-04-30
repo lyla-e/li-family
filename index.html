@@ -215,8 +215,8 @@ function runGame() {
 
     showEvent();
     setTimeout(() => {
-    showAllEvents();
-}, 500);
+        showAllEvents();
+    }, 500 + (events.length * 300));
 }
 
 function showEvent() {
