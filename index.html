@@ -129,6 +129,9 @@ button {
     <input id="weirdInput"
            value="Arnnav Kudale, PK, GG, RM, Michael Li">
 
+    <h3>Roleplay As (optional)</h3>
+    <input id="roleplayInput" value="" placeholder="Type a player name for choose-your-own-adventure mode">
+
 </div>
 
 <button id="generateBtn" onclick="runGame()">Generate Story</button>
@@ -138,14 +141,27 @@ button {
     <div id="eventText">Click "Generate Story"</div>
     <button onclick="nextEvent()">→</button>
 </div>
+<div id="choiceRow" style="display:none; gap:12px; margin-top: 16px;">
+    <button id="choiceA" style="width:auto; padding:10px 18px;" onclick="pickChoice(0)">Choice A</button>
+    <button id="choiceB" style="width:auto; padding:10px 18px;" onclick="pickChoice(1)">Choice B</button>
+</div>
 
 <script>
 let events = [];
 let currentIndex = 0;
+let activePlayers = [];
+let immortalPlayers = [];
+let gameOver = false;
+let pendingChoices = [];
+let roleplayPlayer = "";
+let turnsUntilChoice = 0;
 
 function runGame() {
     events = [];
     currentIndex = 0;
+    gameOver = false;
+    pendingChoices = [];
+    turnsUntilChoice = 0;
 
     let friends = document.getElementById("friendsInput").value
         .split(",")
@@ -156,67 +172,200 @@ function runGame() {
          .split(",")
          .map(x => x.trim())
          .filter(x => x !== "");
-
-    let weirdactions = ['screams "Little Girl!" at', 'kills', 'screams "Little Boy" at', 'accidentally deletes', 'sponsors', 'scolds this person for having a low credit score: ', 'chases', 'says "I am not a minor anymore!" to'];
-    let actions = ['loves', 'hates', 'hugs', 'eats', 'misses', 'cooks', 'marries', 'kisses', 'kills', 
-                   'interlocks toes with', 'inflates', 'defenestrates', 'cornobbles',
-                   'drowns', 'touches', 'jumps', 'blows up', 'vaporizes', 'yeets', 'steal the left shoe of', 'steals the right shoe of', 'takes feet pics of', 'gives an apple to', 'sings Baby Shark at', 'scolds this person for having a low credit score: ', 'robs'];
-
-    let deaths = 0;
+    roleplayPlayer = document.getElementById("roleplayInput").value.trim();
 
     events.push("The players in this game are: " + friends.join(", "));
     events.push("Influencers (immortal): " + weirdpeople.join(", "));
+    activePlayers = [...friends];
+    immortalPlayers = [...weirdpeople];
 
-    while (friends.length > 1) {
-        let roll = Math.floor(Math.random() * 4);
-
-        let friend, action;
-
-        if (roll >= 3) {
-            friend = weirdpeople[Math.floor(Math.random() * weirdpeople.length)];
-            action = weirdactions[Math.floor(Math.random() * weirdactions.length)];
-        } else {
-            friend = friends[Math.floor(Math.random() * friends.length)];
-            action = actions[Math.floor(Math.random() * actions.length)];
-        }
-
-        let friend2 = friends[Math.floor(Math.random() * friends.length)];
-
-        // prevent self-targeting
-        while (friend2 === friend && friends.length > 1) {
-            friend2 = friends[Math.floor(Math.random() * friends.length)];
-        }
-
-        events.push(friend + " " + action + " " + friend2);
-
-        if (action === 'screams "Little Boy" at') {
-            events.push(friend2 + " screams back 'What? I'm a girl?'");
-        }
-
-        if (['kills','eats','drowns','blows up','inflates','defenestrates', 'blows up', 'vaporizes', 'accidentally deletes'].includes(action)) {
-            friends.splice(friends.indexOf(friend2), 1);
-            events.push(friend2 + " is now dead.");
-
-            deaths++;
-
-            if (deaths === 1) {
-                events.push("This is the first death!");
-            }
-
-            if (friends.length === 2) {
-                events.push("Final showdown between " + friends[0] + " and " + friends[1] + "!");
-            }
-        }
-    }
-
-    if (friends.length === 1) {
-        events.push(friends[0] + " is the winner!");
+    if (roleplayPlayer !== "") {
+        events.push("Roleplay mode enabled: You are " + roleplayPlayer + ".");
+        events.push("Your choices appear every few events and can change the story.");
+        turnsUntilChoice = randomTurnsToChoice();
+    } else {
+        events.push("No roleplay name entered, so this round is fully random.");
     }
 
     showEvent();
-    setTimeout(() => {
-        showAllEvents();
-    }, 500 + (events.length * 300));
+    if (roleplayPlayer !== "") {
+        prepareChoices();
+    } else {
+        runAutomaticRound();
+    }
+}
+
+function randomFrom(list) {
+    return list[Math.floor(Math.random() * list.length)];
+}
+
+function createOption() {
+    const weirdactions = ['screams "Little Girl!" at', 'kills', 'screams "Little Boy" at', 'accidentally deletes', 'sponsors', 'scolds this person for having a low credit score: ', 'chases', 'says "I am not a minor anymore!" to'];
+    const actions = ['loves', 'hates', 'hugs', 'eats', 'misses', 'cooks', 'marries', 'kisses', 'kills',
+                   'interlocks toes with', 'inflates', 'defenestrates', 'cornobbles',
+                   'drowns', 'touches', 'jumps', 'blows up', 'vaporizes', 'yeets', 'steal the left shoe of', 'steals the right shoe of', 'takes feet pics of', 'gives an apple to', 'sings Baby Shark at', 'scolds this person for having a low credit score: ', 'robs'];
+    const lethal = ['kills','eats','drowns','blows up','inflates','defenestrates','vaporizes','accidentally deletes'];
+
+    const roll = Math.floor(Math.random() * 4);
+    const source = roll >= 3 ? randomFrom(immortalPlayers) : randomFrom(activePlayers);
+    const action = roll >= 3 ? randomFrom(weirdactions) : randomFrom(actions);
+    let target = randomFrom(activePlayers);
+    while (target === source && activePlayers.length > 1) {
+        target = randomFrom(activePlayers);
+    }
+    return { source, action, target, lethal: lethal.includes(action) };
+}
+
+function randomTurnsToChoice() {
+    return Math.floor(Math.random() * 4) + 2;
+}
+
+function createRoleplayChoices() {
+    const aliveTargets = activePlayers.filter(x => x !== roleplayPlayer);
+    if (aliveTargets.length === 0) {
+        return [
+            { type: "train", source: roleplayPlayer, text: roleplayPlayer + " goes on a speed-training run." },
+            { type: "hide", source: roleplayPlayer, text: roleplayPlayer + " hides quietly to avoid drama." }
+        ];
+    }
+    const targetA = randomFrom(aliveTargets);
+    const targetB = randomFrom(aliveTargets);
+    const targetC = randomFrom(aliveTargets);
+    const actionPool = [
+        { type: "poison", source: roleplayPlayer, target: targetA, text: roleplayPlayer + " poisons " + targetA + "'s drink." },
+        { type: "frame", source: roleplayPlayer, target: targetB, text: roleplayPlayer + " plants fake evidence against " + targetB + "." },
+        { type: "train", source: roleplayPlayer, target: targetC, text: roleplayPlayer + " goes on a speed-training run." },
+        { type: "alliance", source: roleplayPlayer, target: targetC, text: roleplayPlayer + " tries to form a secret alliance with " + targetC + "." }
+    ];
+    const first = randomFrom(actionPool);
+    let second = randomFrom(actionPool);
+    while (second.text === first.text) second = randomFrom(actionPool);
+    return [
+        first,
+        second
+    ];
+}
+
+function resolveRoleplayChoice(choice) {
+    events.push(choice.text);
+    if (choice.type === "poison") {
+        if (Math.random() < 0.45) {
+            events.push(choice.target + " discovers the poison and launches an investigation.");
+            const suspect = randomFrom(activePlayers);
+            events.push("The questioning gets messy and everyone starts blaming " + suspect + ".");
+            if (Math.random() < 0.35 && activePlayers.includes(roleplayPlayer)) {
+                events.push(roleplayPlayer + " says something shady during the interview.");
+                activePlayers.splice(activePlayers.indexOf(roleplayPlayer), 1);
+                events.push("The crowd panics and eliminates " + roleplayPlayer + ".");
+            } else {
+                events.push("No one can prove anything... yet.");
+            }
+        } else if (activePlayers.includes(choice.target)) {
+            activePlayers.splice(activePlayers.indexOf(choice.target), 1);
+            events.push(choice.target + " drinks it and is now dead.");
+        }
+    } else if (choice.type === "frame") {
+        if (Math.random() < 0.5) {
+            events.push("People believe the evidence and turn against " + choice.target + ".");
+            if (activePlayers.includes(choice.target)) {
+                activePlayers.splice(activePlayers.indexOf(choice.target), 1);
+                events.push(choice.target + " is now dead.");
+            }
+        } else {
+            events.push("The setup backfires and suspicion swings toward " + roleplayPlayer + ".");
+            if (Math.random() < 0.4 && activePlayers.includes(roleplayPlayer)) {
+                activePlayers.splice(activePlayers.indexOf(roleplayPlayer), 1);
+                events.push(roleplayPlayer + " is now dead.");
+            }
+        }
+    } else if (choice.type === "train") {
+        events.push(roleplayPlayer + " feels faster after training.");
+        if (Math.random() < 0.7) {
+            const possibleComplimenters = activePlayers.filter(x => x !== roleplayPlayer);
+            if (possibleComplimenters.length > 0) {
+                const complimenter = randomFrom(possibleComplimenters);
+                events.push(complimenter + " compliments " + roleplayPlayer + ": 'Wow, you're so fast now!'");
+            }
+        }
+        if (Math.random() < 0.2) {
+            events.push(roleplayPlayer + " trips during a sprint and gets minorly injured.");
+        }
+    } else if (choice.type === "alliance") {
+        if (Math.random() < 0.55) {
+            events.push(choice.target + " agrees to the alliance and promises backup.");
+        } else {
+            events.push(choice.target + " rejects the alliance and leaks the plan.");
+            if (Math.random() < 0.25 && activePlayers.includes(roleplayPlayer)) {
+                activePlayers.splice(activePlayers.indexOf(roleplayPlayer), 1);
+                events.push(roleplayPlayer + " gets targeted for scheming and is now dead.");
+            }
+        }
+    } else if (choice.type === "hide") {
+        events.push(roleplayPlayer + " avoids conflict and survives this round unnoticed.");
+    }
+}
+
+function prepareChoices() {
+    if (activePlayers.length <= 1) {
+        gameOver = true;
+        if (activePlayers.length === 1) events.push(activePlayers[0] + " is the winner!");
+        currentIndex = events.length - 1;
+        showEvent();
+        document.getElementById("choiceRow").style.display = "none";
+        return;
+    }
+    if (!activePlayers.includes(roleplayPlayer)) {
+        events.push(roleplayPlayer + " is out, so the rest of the story continues randomly.");
+        showEvent();
+        document.getElementById("choiceRow").style.display = "none";
+        runAutomaticRound();
+        return;
+    }
+    pendingChoices = createRoleplayChoices();
+    document.getElementById("choiceA").innerText = pendingChoices[0].text;
+    document.getElementById("choiceB").innerText = pendingChoices[1].text;
+    document.getElementById("choiceRow").style.display = "flex";
+}
+
+function pickChoice(choiceIndex) {
+    if (gameOver) return;
+    const pick = pendingChoices[choiceIndex];
+    resolveRoleplayChoice(pick);
+    currentIndex = events.length - 1;
+    showEvent();
+    if (activePlayers.length === 2) {
+        events.push("Final showdown between " + activePlayers[0] + " and " + activePlayers[1] + "!");
+    }
+    document.getElementById("choiceRow").style.display = "none";
+    turnsUntilChoice = randomTurnsToChoice();
+    runAutomaticRound();
+}
+
+function applyGenericOption(pick) {
+    events.push(pick.source + " " + pick.action + " " + pick.target);
+    if (pick.action === 'screams "Little Boy" at') events.push(pick.target + " screams back 'What? I'm a girl?'");
+    if (pick.lethal && activePlayers.includes(pick.target)) {
+        activePlayers.splice(activePlayers.indexOf(pick.target), 1);
+        events.push(pick.target + " is now dead.");
+        if (activePlayers.length === 2) events.push("Final showdown between " + activePlayers[0] + " and " + activePlayers[1] + "!");
+    }
+}
+
+function runAutomaticRound() {
+    while (activePlayers.length > 1) {
+        if (roleplayPlayer !== "" && activePlayers.includes(roleplayPlayer) && turnsUntilChoice <= 0) {
+            currentIndex = events.length - 1;
+            showEvent();
+            prepareChoices();
+            return;
+        }
+        applyGenericOption(createOption());
+        if (roleplayPlayer !== "" && activePlayers.includes(roleplayPlayer)) turnsUntilChoice--;
+    }
+    gameOver = true;
+    if (activePlayers.length === 1) events.push(activePlayers[0] + " is the winner!");
+    currentIndex = events.length - 1;
+    showEvent();
 }
 
 function showEvent() {
